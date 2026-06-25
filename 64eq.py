@@ -1,5 +1,6 @@
 import random
 import json
+import os
 from itertools import combinations
 
 
@@ -7,14 +8,18 @@ from itertools import combinations
 # Settings
 # =========================
 
-RESULT_FILE = "quad64_example_hands_binary_9_each.json"
+RESULT_FILE = "quad64_discovery_examples_30_each.json"
 
 DECK_SIZE = 64
 K_MIN = 1
 K_MAX = 14
 
-BATCH_TRIALS = 10000000
-EXAMPLES_PER_QUAD_COUNT = 9
+BATCH_TRIALS_PER_K = 1000000
+EXAMPLES_PER_QUAD_COUNT = 30
+
+# None means keep running forever until you stop it with Ctrl+C.
+# If you want to test first, set MAX_BATCHES = 1 or 2.
+MAX_BATCHES = None
 
 
 # =========================
@@ -47,6 +52,10 @@ def quads_to_binary(quads, deck_size):
         binary_quads.append(binary_quad)
 
     return binary_quads
+
+
+def binary_hand_signature(binary_hand):
+    return tuple(binary_hand)
 
 
 # =========================
@@ -93,17 +102,30 @@ def list_quads(hand):
 
 
 # =========================
-# Load and save results
+# Results structure
 # =========================
+
+def fresh_results():
+    results = {}
+
+    for k in range(K_MIN, K_MAX + 1):
+        results[k] = {
+            "trials": 0,
+            "distribution": {},
+            "examples": {},
+        }
+
+    return results
+
 
 def normalize_examples(raw_examples):
     """
-    Convert old format to new format if needed.
+    Convert old example format to new format if needed.
 
-    Old format:
+    Old:
         "3": {"hand": [...], "quads": [...]}
 
-    New format:
+    New:
         "3": [
             {"hand": [...], "quads": [...]},
             {"hand": [...], "quads": [...]}
@@ -116,69 +138,90 @@ def normalize_examples(raw_examples):
 
         if isinstance(value, list):
             examples[q] = value
-
         elif isinstance(value, dict):
             examples[q] = [value]
-
         else:
             examples[q] = []
 
     return examples
 
 
-def load_results():
+def normalize_loaded_results(data):
     """
-    Load previous examples from JSON file.
-    If the file does not exist, start fresh.
+    Normalize old or partial JSON files into the current structure.
+    This allows you to continue from older files.
     """
-    try:
-        with open(RESULT_FILE, "r") as f:
-            data = json.load(f)
-
-    except FileNotFoundError:
-        data = {}
-
-    results = {}
+    results = fresh_results()
 
     for k in range(K_MIN, K_MAX + 1):
         k_str = str(k)
 
-        if k_str in data:
-            raw_examples = data[k_str].get("examples", {})
-            examples = normalize_examples(raw_examples)
+        if k_str not in data:
+            continue
 
-            results[k] = {
-                "trials": data[k_str].get("trials", 0),
-                "examples": examples,
-            }
+        old = data[k_str]
 
-        else:
-            results[k] = {
-                "trials": 0,
-                "examples": {},
-            }
+        trials = old.get("trials", 0)
+        raw_distribution = old.get("distribution", {})
+        raw_examples = old.get("examples", {})
+
+        distribution = {}
+        for q_str, count in raw_distribution.items():
+            distribution[int(q_str)] = count
+
+        examples = normalize_examples(raw_examples)
+
+        # If an old file had examples but no distribution,
+        # at least make sure those q values are recognized.
+        for q in examples.keys():
+            if q not in distribution:
+                distribution[q] = 0
+
+        results[k] = {
+            "trials": trials,
+            "distribution": distribution,
+            "examples": examples,
+        }
 
     return results
 
 
+def load_results():
+    """
+    Load previous results from JSON file.
+    If the file does not exist, start fresh.
+    """
+    if not os.path.exists(RESULT_FILE):
+        return fresh_results()
+
+    with open(RESULT_FILE, "r") as f:
+        data = json.load(f)
+
+    return normalize_loaded_results(data)
+
+
 def save_results(results):
     """
-    Save examples to JSON file.
+    Save distribution and examples to JSON.
     Quad counts are sorted from small to large.
-    Only observed quad counts are saved.
     """
     data = {}
 
     for k in range(K_MIN, K_MAX + 1):
+        distribution = results[k]["distribution"]
         examples = results[k]["examples"]
 
-        sorted_examples = {}
+        sorted_distribution = {}
+        for q in sorted(distribution.keys()):
+            sorted_distribution[str(q)] = distribution[q]
 
+        sorted_examples = {}
         for q in sorted(examples.keys()):
             sorted_examples[str(q)] = examples[q]
 
         data[str(k)] = {
             "trials": results[k]["trials"],
+            "distribution": sorted_distribution,
             "examples": sorted_examples,
         }
 
@@ -187,144 +230,260 @@ def save_results(results):
 
 
 # =========================
-# Duplicate checking
+# Example saving
 # =========================
-
-def hand_signature(binary_hand):
-    """
-    Use tuple of binary strings as a unique signature.
-    """
-    return tuple(binary_hand)
-
 
 def already_have_hand(example_list, binary_hand):
     """
-    Check whether this exact hand is already saved.
+    Check whether this exact binary hand is already saved.
     """
-    sig = hand_signature(binary_hand)
+    sig = binary_hand_signature(binary_hand)
 
     for example in example_list:
-        old_sig = hand_signature(example["hand"])
+        old_sig = binary_hand_signature(example["hand"])
         if old_sig == sig:
             return True
 
     return False
 
 
-def need_more_examples(results, k, q):
+def save_example_if_needed(results, k, q, hand):
     """
-    Return True if this k and quad count q has fewer than 9 examples.
+    Save this hand as an example if this k and q has fewer than 30 examples.
+    Return True if saved.
     """
     if q not in results[k]["examples"]:
-        return True
+        results[k]["examples"][q] = []
 
-    return len(results[k]["examples"][q]) < EXAMPLES_PER_QUAD_COUNT
+    example_list = results[k]["examples"][q]
+
+    if len(example_list) >= EXAMPLES_PER_QUAD_COUNT:
+        return False
+
+    binary_hand = hand_to_binary(hand, DECK_SIZE)
+
+    if already_have_hand(example_list, binary_hand):
+        return False
+
+    quads = list_quads(hand)
+    binary_quads = quads_to_binary(quads, DECK_SIZE)
+
+    example = {
+        "hand": binary_hand,
+        "quads": binary_quads,
+    }
+
+    example_list.append(example)
+    return True
 
 
 # =========================
-# Search for example hands
+# Discovery search
 # =========================
 
-def search_more_examples(results, batch_trials=BATCH_TRIALS):
+def run_one_batch(results, batch_number):
     """
-    For every k, randomly generate hands.
+    Run one discovery batch.
 
-    For each possible quad count q that appears, save up to
-    EXAMPLES_PER_QUAD_COUNT different example hands.
+    For each k:
+    - randomly sample hands
+    - update distribution
+    - save up to 30 examples for every observed quad count
     """
     deck = list(range(DECK_SIZE))
+
+    print()
+    print("=" * 60)
+    print("BATCH", batch_number)
+    print("=" * 60)
+
+    total_new_quad_counts = 0
+    total_new_examples = 0
 
     for k in range(K_MIN, K_MAX + 1):
         print()
         print("Searching k =", k)
 
-        new_found_for_k = 0
+        new_quad_counts_for_k = []
+        new_examples_for_k = 0
 
-        for _ in range(batch_trials):
+        for trial in range(1, BATCH_TRIALS_PER_K + 1):
             hand = sorted(random.sample(deck, k))
             q = count_quads(hand)
 
-            if need_more_examples(results, k, q):
-                quads = list_quads(hand)
+            # Update distribution
+            if q not in results[k]["distribution"]:
+                results[k]["distribution"][q] = 0
+                new_quad_counts_for_k.append(q)
+                total_new_quad_counts += 1
 
-                binary_hand = hand_to_binary(hand, DECK_SIZE)
-                binary_quads = quads_to_binary(quads, DECK_SIZE)
+                print()
+                print("NEW QUAD COUNT DISCOVERED!")
+                print("k =", k)
+                print("quad count =", q)
+                print("hand =", hand_to_binary(hand, DECK_SIZE))
+                print()
 
-                if q not in results[k]["examples"]:
-                    results[k]["examples"][q] = []
+            results[k]["distribution"][q] += 1
 
-                if not already_have_hand(results[k]["examples"][q], binary_hand):
-                    example = {
-                        "hand": binary_hand,
-                        "quads": binary_quads,
-                    }
+            # Save example if needed
+            saved = save_example_if_needed(results, k, q, hand)
 
-                    results[k]["examples"][q].append(example)
-                    new_found_for_k += 1
+            if saved:
+                new_examples_for_k += 1
+                total_new_examples += 1
 
-                    print("New example found!")
-                    print("k =", k)
-                    print("quad count =", q)
-                    print(
-                        "example number for this quad count =",
-                        len(results[k]["examples"][q]),
-                        "/",
-                        EXAMPLES_PER_QUAD_COUNT,
-                    )
-                    print("hand =", binary_hand)
-                    print("quads =", binary_quads)
-                    print()
+                current_count = len(results[k]["examples"][q])
 
-        results[k]["trials"] += batch_trials
+                print("New example saved!")
+                print("k =", k)
+                print("quad count =", q)
+                print("example number =", current_count, "/", EXAMPLES_PER_QUAD_COUNT)
+                print("hand =", hand_to_binary(hand, DECK_SIZE))
+                print()
+
+            if trial % 20000 == 0:
+                print(
+                    "  progress:",
+                    trial,
+                    "/",
+                    BATCH_TRIALS_PER_K,
+                    "for k =",
+                    k,
+                )
+
+        results[k]["trials"] += BATCH_TRIALS_PER_K
 
         print("Finished k =", k)
-        print("New examples found for this k:", new_found_for_k)
+        print("total trials for k =", results[k]["trials"])
+        print("quad counts found so far =", sorted(results[k]["distribution"].keys()))
+
+        if new_quad_counts_for_k:
+            print("new quad counts this batch =", sorted(new_quad_counts_for_k))
+        else:
+            print("no new quad counts this batch")
+
+        print("new examples saved for this k =", new_examples_for_k)
+
+    print()
+    print("BATCH SUMMARY")
+    print("new quad counts discovered =", total_new_quad_counts)
+    print("new examples saved =", total_new_examples)
 
     return results
 
 
 # =========================
-# Print summary
+# Summary
 # =========================
 
 def print_summary(results):
     print()
-    print("SUMMARY")
-    print("=======")
+    print("=" * 60)
+    print("CURRENT SUMMARY")
+    print("=" * 60)
 
     for k in range(K_MIN, K_MAX + 1):
+        distribution = results[k]["distribution"]
         examples = results[k]["examples"]
 
         print()
         print("k =", k)
-        print("total trials =", results[k]["trials"])
-        print("quad counts found:", sorted(examples.keys()))
+        print("trials =", results[k]["trials"])
+        print("quad counts found =", sorted(distribution.keys()))
 
-        for q in sorted(examples.keys()):
-            example_list = examples[q]
+        print("distribution:")
+        for q in sorted(distribution.keys()):
+            print("  ", q, ":", distribution[q])
 
+        print("examples saved:")
+        for q in sorted(distribution.keys()):
+            current = len(examples.get(q, []))
             print(
                 "  ",
                 q,
                 "quads:",
-                len(example_list),
+                current,
                 "/",
                 EXAMPLES_PER_QUAD_COUNT,
                 "examples",
             )
 
-            for i, example in enumerate(example_list, start=1):
-                print("      example", i, ":", example["hand"])
+
+def print_missing_example_counts(results):
+    """
+    Show observed quad counts that still have fewer than 30 examples.
+    """
+    print()
+    print("=" * 60)
+    print("OBSERVED COUNTS THAT STILL NEED MORE EXAMPLES")
+    print("=" * 60)
+
+    any_missing = False
+
+    for k in range(K_MIN, K_MAX + 1):
+        missing = []
+
+        for q in sorted(results[k]["distribution"].keys()):
+            current = len(results[k]["examples"].get(q, []))
+
+            if current < EXAMPLES_PER_QUAD_COUNT:
+                missing.append((q, current))
+
+        if missing:
+            any_missing = True
+            print()
+            print("k =", k)
+
+            for q, current in missing:
+                print(
+                    "  q =",
+                    q,
+                    ":",
+                    current,
+                    "/",
+                    EXAMPLES_PER_QUAD_COUNT,
+                )
+
+    if not any_missing:
+        print("Every observed quad count already has 30 examples.")
 
 
 # =========================
 # Main program
 # =========================
 
-results = load_results()
+def main():
+    results = load_results()
+    batch_number = 1
 
-results = search_more_examples(results, batch_trials=BATCH_TRIALS)
+    try:
+        while True:
+            if MAX_BATCHES is not None and batch_number > MAX_BATCHES:
+                break
 
-save_results(results)
+            results = run_one_batch(results, batch_number)
 
-print_summary(results)
+            save_results(results)
+            print_summary(results)
+            print_missing_example_counts(results)
+
+            print()
+            print("Saved to:", RESULT_FILE)
+            print("You can stop with Ctrl+C, or let it keep running.")
+
+            batch_number += 1
+
+    except KeyboardInterrupt:
+        print()
+        print("Stopped by user. Saving current results...")
+
+    save_results(results)
+    print_summary(results)
+    print_missing_example_counts(results)
+
+    print()
+    print("Final saved file:", RESULT_FILE)
+
+
+main()

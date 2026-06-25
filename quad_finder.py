@@ -17,7 +17,9 @@ DECK_SIZE = 64
 DIMENSION = 6
 GRID_SIZE = 8
 
-EXAMPLE_FILE = "quad64_example_hands_binary_9_each.json"
+#EXAMPLE_FILE = "quad64_example_hands_binary_9_each.json"
+EXAMPLE_FILE = "quad64_discovery_examples_30_each.json"
+
 
 CARD_WIDTH = 140
 CARD_HEIGHT = 200
@@ -653,7 +655,7 @@ else:
             binary_hand = selected_example["hand"]
             int_hand = sorted([binary_to_int(bits) for bits in binary_hand])
             st.session_state.hand = int_hand
-
+100
     
 # =========================
 # Generated card image grid
@@ -674,7 +676,7 @@ for row in range(GRID_SIZE):
         img = render_card_image(card, selected=is_selected)
 
         with cols[col]:
-            st.image(img, use_container_width=True)
+            st.image(img, width=80)
 
             if is_selected:
                 st.button(
