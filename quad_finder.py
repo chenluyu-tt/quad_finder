@@ -241,8 +241,8 @@ def render_card_image(card, selected=False):
 
     # compact fonts
     try:
-        font = ImageFont.truetype("arial.ttf", 20)
-        small_font = ImageFont.truetype("arial.ttf", 8)
+        font = ImageFont.truetype("DejaVuSans-Bold.ttf", 13)
+        small_font = ImageFont.truetype("DejaVuSans.ttf", 8)
     except OSError:
         font = ImageFont.load_default()
         small_font = ImageFont.load_default()
@@ -563,6 +563,84 @@ def draw_grid(hand, quads, show_quad_lines=True):
 
 
 # =========================
+# Hand statistics matrix
+# =========================
+
+def hand_attribute_matrix(hand):
+    """
+    Count selected cards by color, symbol, and number.
+    Return a dictionary that can be displayed like a matrix.
+    """
+    color_order = ["green", "blue", "pink", "yellow"]
+    symbol_order = ["spiral", "diamond", "circle", "square"]
+    number_order = [1, 2, 3, 4]
+
+    color_counts = {c: 0 for c in color_order}
+    symbol_counts = {s: 0 for s in symbol_order}
+    number_counts = {n: 0 for n in number_order}
+
+    for card in hand:
+        info = decode_card(card)
+
+        color_counts[info["color_name"]] += 1
+        symbol_counts[info["symbol"]] += 1
+        number_counts[info["number"]] += 1
+
+    return {
+        "Color": color_counts,
+        "Shape": symbol_counts,
+        "Number": number_counts,
+    }
+
+
+def display_attribute_matrix(hand):
+    """
+    Display selected-card attribute counts as a linear-algebra-style matrix.
+    """
+    matrix = hand_attribute_matrix(hand)
+
+    st.subheader("Attribute Count Matrix")
+
+    st.write("Counts of selected cards by each attribute.")
+
+    st.markdown("**Color vector**")
+    st.table({
+        "green": [matrix["Color"]["green"]],
+        "blue": [matrix["Color"]["blue"]],
+        "pink": [matrix["Color"]["pink"]],
+        "yellow": [matrix["Color"]["yellow"]],
+    })
+
+    st.markdown("**Shape vector**")
+    st.table({
+        "spiral": [matrix["Shape"]["spiral"]],
+        "diamond": [matrix["Shape"]["diamond"]],
+        "circle": [matrix["Shape"]["circle"]],
+        "square": [matrix["Shape"]["square"]],
+    })
+
+    st.markdown("**Number vector**")
+    st.table({
+        "1": [matrix["Number"][1]],
+        "2": [matrix["Number"][2]],
+        "3": [matrix["Number"][3]],
+        "4": [matrix["Number"][4]],
+    })
+
+
+def display_quad_card_images(quad):
+    """
+    Display the four generated card images in one quad.
+    """
+    cols = st.columns(4)
+
+    for j, card in enumerate(quad):
+        with cols[j]:
+            img = render_card_image(card, selected=True)
+            st.image(img, width=75)
+            st.caption(to_binary(card))
+
+# =========================
 # Streamlit app
 # =========================
 
@@ -655,7 +733,6 @@ else:
             binary_hand = selected_example["hand"]
             int_hand = sorted([binary_to_int(bits) for bits in binary_hand])
             st.session_state.hand = int_hand
-100
     
 # =========================
 # Generated card image grid
@@ -717,6 +794,8 @@ with col2:
     st.subheader("Statistics")
     st.write("Selected cards:", len(hand))
     st.write("Number of quads:", len(quads))
+
+    display_attribute_matrix(hand)
 
     st.subheader("Hand")
     if hand:
