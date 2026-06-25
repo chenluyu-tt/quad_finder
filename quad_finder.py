@@ -21,8 +21,8 @@ GRID_SIZE = 8
 EXAMPLE_FILE = "quad64_discovery_examples_30_each.json"
 
 
-CARD_WIDTH = 140
-CARD_HEIGHT = 200
+CARD_WIDTH = 90
+CARD_HEIGHT = 128
 
 
 # =========================
@@ -210,10 +210,10 @@ def draw_square(draw, cx, cy, size, color, width=4):
     )
 
 
-@st.cache_data
+#@st.cache_data
 def render_card_image(card, selected=False):
     """
-    Generate a card image for a given Quad-64 card.
+    Generate a compact card image for a given Quad-64 card.
     """
     info = decode_card(card)
     symbol = info["symbol"]
@@ -233,48 +233,48 @@ def render_card_image(card, selected=False):
 
     # outer border
     draw.rounded_rectangle(
-        (4, 4, CARD_WIDTH - 4, CARD_HEIGHT - 4),
-        radius=12,
+        (3, 3, CARD_WIDTH - 3, CARD_HEIGHT - 3),
+        radius=8,
         outline=border_color,
-        width=4,
+        width=3,
     )
 
-    # font
+    # compact fonts
     try:
-        font = ImageFont.truetype("arial.ttf", 16)
-        small_font = ImageFont.truetype("arial.ttf", 14)
+        font = ImageFont.truetype("arial.ttf", 20)
+        small_font = ImageFont.truetype("arial.ttf", 8)
     except OSError:
         font = ImageFont.load_default()
         small_font = ImageFont.load_default()
 
     # top binary label
-    draw.text((12, 10), bits, fill=(50, 50, 50), font=font)
+    draw.text((6, 5), bits, fill=(50, 50, 50), font=font)
 
-    # symbol positions
+    # compact symbol positions
     y_positions_map = {
-        1: [100],
-        2: [75, 125],
-        3: [60, 100, 140],
-        4: [50, 85, 120, 155],
+        1: [64],
+        2: [50, 78],
+        3: [42, 64, 86],
+        4: [34, 54, 74, 94],
     }
 
     y_positions = y_positions_map[number]
     cx = CARD_WIDTH // 2
-    size = 18
+    size = 10
 
     for cy in y_positions:
         if symbol == "spiral":
-            draw_spiral(draw, cx, cy, size, color, width=4)
+            draw_spiral(draw, cx, cy, size, color, width=3)
         elif symbol == "diamond":
-            draw_diamond(draw, cx, cy, size, color, width=4)
+            draw_diamond(draw, cx, cy, size, color, width=3)
         elif symbol == "circle":
-            draw_circle(draw, cx, cy, size, color, width=4)
+            draw_circle(draw, cx, cy, size, color, width=3)
         elif symbol == "square":
-            draw_square(draw, cx, cy, size, color, width=4)
+            draw_square(draw, cx, cy, size, color, width=3)
 
     # bottom card number label
     draw.text(
-        (12, CARD_HEIGHT - 24),
+        (6, CARD_HEIGHT - 14),
         "card " + str(card),
         fill=(90, 90, 90),
         font=small_font,
@@ -664,36 +664,36 @@ else:
 st.markdown("---")
 st.subheader("Generated Card Image Grid")
 
-st.write("The same 64 cards are shown below as generated Quad card images.")
+st.write("Compact 16 × 4 view of all 64 generated Quad cards.")
 
-for row in range(GRID_SIZE):
-    cols = st.columns(GRID_SIZE)
+IMAGE_GRID_COLS = 16
+IMAGE_GRID_ROWS = 4
 
-    for col in range(GRID_SIZE):
-        card = row * GRID_SIZE + col
+for row in range(IMAGE_GRID_ROWS):
+    cols = st.columns(IMAGE_GRID_COLS, gap="small")
+
+    for col in range(IMAGE_GRID_COLS):
+        card = row * IMAGE_GRID_COLS + col
+
+        if card >= DECK_SIZE:
+            continue
+
         is_selected = card in st.session_state.hand
 
         img = render_card_image(card, selected=is_selected)
 
         with cols[col]:
-            st.image(img, width=80)
+            st.image(img, width=60)
 
-            if is_selected:
-                st.button(
-                    "Remove",
-                    key="image_card_button_{}".format(card),
-                    on_click=toggle_card,
-                    args=(card,),
-                    use_container_width=True,
-                )
-            else:
-                st.button(
-                    "Select",
-                    key="image_card_button_{}".format(card),
-                    on_click=toggle_card,
-                    args=(card,),
-                    use_container_width=True,
-                )
+            button_label = "✓" if is_selected else "+"
+
+            st.button(
+                button_label,
+                key="image_card_button_{}".format(card),
+                on_click=toggle_card,
+                args=(card,),
+            )
+
 
 # =========================
 # Current data
