@@ -24,6 +24,9 @@ EXAMPLE_FILE = "quad64_discovery_examples_30_each.json"
 CARD_WIDTH = 90
 CARD_HEIGHT = 128
 
+GEOM_GRID_2_COLS = 16
+GEOM_GRID_2_ROWS = 4
+
 
 # =========================
 # Card / binary helpers
@@ -101,12 +104,14 @@ def get_examples_for_choice(example_data, k, q):
 
     return examples[q_str]
 
-def card_to_position(card):
+def card_to_position(card, cols=8):
     """
-    Put cards 0,...,63 into an 8 x 8 grid.
+    Put cards 0,...,63 into a rectangular grid.
+    For 8x8, use cols=8.
+    For 16x4, use cols=16.
     """
-    row = card // GRID_SIZE
-    col = card % GRID_SIZE
+    row = card // cols
+    col = card % cols
     return row, col
 
 
@@ -404,7 +409,7 @@ def quad_geometric_description(quad):
 # Drawing helper
 # =========================
 
-def order_quad_for_drawing(quad):
+def order_quad_for_drawing(quad, grid_cols=8, grid_rows=8):
     """
     Order the four points around their center so that the polygon
     is drawn without crossing itself.
@@ -412,9 +417,9 @@ def order_quad_for_drawing(quad):
     points = []
 
     for card in quad:
-        row, col = card_to_position(card)
+        row, col = card_to_position(card, cols=grid_cols)
         x = col
-        y = GRID_SIZE - 1 - row
+        y = grid_rows - 1 - row
         points.append((card, x, y))
 
     cx = sum(x for _, x, _ in points) / 4
@@ -429,24 +434,34 @@ def order_quad_for_drawing(quad):
 # Plotting
 # =========================
 
-def draw_grid(hand, quads, show_quad_lines=True):
+def draw_grid(
+    hand,
+    quads,
+    show_quad_lines=True,
+    grid_cols=8,
+    grid_rows=8,
+    title="Quad-64 Finder",
+):
     fig = go.Figure()
 
-    # Draw grid lines
-    for i in range(GRID_SIZE + 1):
+    # Draw vertical grid lines
+    for i in range(grid_cols + 1):
         fig.add_shape(
             type="line",
             x0=i - 0.5,
             y0=-0.5,
             x1=i - 0.5,
-            y1=GRID_SIZE - 0.5,
+            y1=grid_rows - 0.5,
             line=dict(color="lightgray", width=1),
         )
+
+    # Draw horizontal grid lines
+    for i in range(grid_rows + 1):
         fig.add_shape(
             type="line",
             x0=-0.5,
             y0=i - 0.5,
-            x1=GRID_SIZE - 0.5,
+            x1=grid_cols - 0.5,
             y1=i - 0.5,
             line=dict(color="lightgray", width=1),
         )
@@ -457,9 +472,9 @@ def draw_grid(hand, quads, show_quad_lines=True):
     all_text = []
 
     for card in range(DECK_SIZE):
-        row, col = card_to_position(card)
+        row, col = card_to_position(card, cols=grid_cols)
         all_x.append(col)
-        all_y.append(GRID_SIZE - 1 - row)
+        all_y.append(grid_rows - 1 - row)
         all_text.append(to_binary(card))
 
     fig.add_trace(
@@ -480,9 +495,9 @@ def draw_grid(hand, quads, show_quad_lines=True):
     selected_text = []
 
     for card in hand:
-        row, col = card_to_position(card)
+        row, col = card_to_position(card, cols=grid_cols)
         selected_x.append(col)
-        selected_y.append(GRID_SIZE - 1 - row)
+        selected_y.append(grid_rows - 1 - row)
         selected_text.append(to_binary(card))
 
     fig.add_trace(
@@ -494,11 +509,11 @@ def draw_grid(hand, quads, show_quad_lines=True):
             textposition="middle center",
             marker=dict(
                 symbol="diamond",
-                size=42,
+                size=42 if grid_cols == 8 else 32,
                 color="mediumseagreen",
                 line=dict(color="darkgreen", width=2),
             ),
-            textfont=dict(size=11, color="black"),
+            textfont=dict(size=11 if grid_cols == 8 else 9, color="black"),
             name="Selected cards",
         )
     )
@@ -516,14 +531,17 @@ def draw_grid(hand, quads, show_quad_lines=True):
             xs = []
             ys = []
 
-            quad_ordered = order_quad_for_drawing(quad)
+            quad_ordered = order_quad_for_drawing(
+                quad,
+                grid_cols=grid_cols,
+                grid_rows=grid_rows,
+            )
 
             for card in quad_ordered:
-                row, col = card_to_position(card)
+                row, col = card_to_position(card, cols=grid_cols)
                 xs.append(col)
-                ys.append(GRID_SIZE - 1 - row)
+                ys.append(grid_rows - 1 - row)
 
-            # close the loop
             xs.append(xs[0])
             ys.append(ys[0])
 
@@ -532,23 +550,23 @@ def draw_grid(hand, quads, show_quad_lines=True):
                     x=xs,
                     y=ys,
                     mode="lines",
-                    line=dict(color=color, width=4),
+                    line=dict(color=color, width=4 if grid_cols == 8 else 3),
                     name="Quad {}".format(i + 1),
                 )
             )
 
     fig.update_layout(
-        width=850,
-        height=850,
+        width=1100 if grid_cols == 16 else 850,
+        height=430 if grid_cols == 16 else 850,
         plot_bgcolor="white",
         xaxis=dict(
-            range=[-0.5, GRID_SIZE - 0.5],
+            range=[-0.5, grid_cols - 0.5],
             showgrid=False,
             zeroline=False,
             showticklabels=False,
         ),
         yaxis=dict(
-            range=[-0.5, GRID_SIZE - 0.5],
+            range=[-0.5, grid_rows - 0.5],
             showgrid=False,
             zeroline=False,
             showticklabels=False,
@@ -556,11 +574,10 @@ def draw_grid(hand, quads, show_quad_lines=True):
             scaleratio=1,
         ),
         margin=dict(l=20, r=20, t=50, b=20),
-        title="Quad-64 Finder: Dimension 6",
+        title=title,
     )
 
     return fig
-
 
 # =========================
 # Hand statistics matrix
@@ -734,6 +751,8 @@ else:
             int_hand = sorted([binary_to_int(bits) for bits in binary_hand])
             st.session_state.hand = int_hand
     
+
+    
 # =========================
 # Generated card image grid
 # =========================
@@ -760,7 +779,7 @@ for row in range(IMAGE_GRID_ROWS):
         img = render_card_image(card, selected=is_selected)
 
         with cols[col]:
-            st.image(img, width=60)
+            st.image(img, width=48)
 
             button_label = "✓" if is_selected else "+"
 
@@ -770,7 +789,6 @@ for row in range(IMAGE_GRID_ROWS):
                 on_click=toggle_card,
                 args=(card,),
             )
-
 
 # =========================
 # Current data
@@ -787,8 +805,34 @@ quads = list_quads(hand)
 col1, col2 = st.columns([3, 1])
 
 with col1:
-    fig = draw_grid(hand, quads, show_quad_lines=show_quad_lines)
-    st.plotly_chart(fig, use_container_width=True)
+    st.subheader("Geometry View: 16 × 4")
+
+    fig_16x4 = draw_grid(
+        hand,
+        quads,
+        show_quad_lines=show_quad_lines,
+        grid_cols=16,
+        grid_rows=4,
+        title="Quad-64 Finder: 16 × 4",
+    )
+
+    st.plotly_chart(fig_16x4, use_container_width=True)
+
+    st.markdown("---")
+
+    st.subheader("Geometry View: 8 × 8")
+
+    fig_8x8 = draw_grid(
+        hand,
+        quads,
+        show_quad_lines=show_quad_lines,
+        grid_cols=8,
+        grid_rows=8,
+        title="Quad-64 Finder: 8 × 8",
+    )
+
+    st.plotly_chart(fig_8x8, use_container_width=True)
+
 
 with col2:
     st.subheader("Statistics")
@@ -808,6 +852,8 @@ with col2:
     if quads:
         for i, quad in enumerate(quads, start=1):
             binary_quad = [to_binary(card) for card in quad]
+
+            st.markdown("---")
             st.write("Quad {}:".format(i))
             st.write(binary_quad)
 
@@ -821,8 +867,8 @@ with col2:
                 f"color = {attr_desc['color']}, "
                 f"number = {attr_desc['number']}"
             )
+
+            st.write("Cards in this quad:")
+            display_quad_card_images(quad)
     else:
         st.write("No quads found.")
-
-
-
